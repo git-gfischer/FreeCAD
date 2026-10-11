@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Launch FreeCAD with the SolidWorks command manager.
+# The geometry kernel is FreeCAD. This script only changes the shell.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+MOD="$ROOT/src/Mod/SolidWorksUI"
+ENV="$ROOT/.sw-freecad"
+HOME_DIR="$ROOT/.sw-home"
+mkdir -p "$HOME_DIR/tmp"
+
+if [[ ! -x "$ENV/bin/freecad" && ! -x "$ENV/bin/FreeCAD" ]]; then
+  echo "FreeCAD runtime is missing at $ENV"
+  echo "Install it with:"
+  echo "  mamba create -p \"$ENV\" -c conda-forge freecad -y"
+  exit 1
+fi
+BIN="$ENV/bin/freecad"
+[[ -x "$BIN" ]] || BIN="$ENV/bin/FreeCAD"
+
+export FREECAD_USER_HOME="$HOME_DIR"
+export FREECAD_USER_DATA="$HOME_DIR"
+export FREECAD_USER_TEMP="$HOME_DIR/tmp"
+
+args=(--user-cfg "$HOME_DIR/user.cfg" --module-path "$MOD")
+if [[ "${1:-}" == "--selftest" ]]; then
+  shift
+  export SWUI_SELFTEST=1
+  export SWUI_SELFTEST_RESULT="$HOME_DIR/selftest.txt"
+  rm -f "$SWUI_SELFTEST_RESULT"
+fi
+
+# Conda Qt's Wayland plugin has no usable EGL on this machine, so
+# QOpenGLWidget never gets a context. XWayland does.
+if [[ -z "${QT_QPA_PLATFORM:-}" && -n "${WAYLAND_DISPLAY:-}" && -n "${DISPLAY:-}" ]]; then
+  export QT_QPA_PLATFORM=xcb
+fi
+
+if [[ -z "${DISPLAY:-}" ]]; then
+  if command -v xvfb-run >/dev/null 2>&1; then
+    exec xvfb-run -a "$BIN" "${args[@]}" "$@"
+  fi
+  export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+fi
+exec "$BIN" "${args[@]}" "$@"
